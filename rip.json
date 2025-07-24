@@ -1,0 +1,8 @@
+{
+  "name": "example",
+  "author": "_G.Sarah"
+  "version": "0.0.1",
+  "description": "example description.",
+  "entry": "src/init.lua",
+  "dependencies": []
+}
