@@ -1,8 +1,8 @@
 {
-  "name": "example",
+  "name": "json",
   "author": "_G.Sarah"
   "version": "0.0.1",
-  "description": "example description.",
+  "description": "a json decoder.",
   "entry": "src/init.lua",
   "dependencies": []
 }
