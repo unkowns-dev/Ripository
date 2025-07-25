@@ -1,287 +1,291 @@
---[[ 
-    Load your OutlineModule here (replace with actual loadstring or require)
-    For example, if you have a URL or string, do:
-    local OutlineModule = loadstring(game:HttpGet("YOUR_URL_HERE"))()
-    
-    For demo, I embed your OutlineModule directly below:
---]]
+local rip = {}
 
-local OutlineModule = (function()
-    local RunService = game:GetService("RunService")
-    local Players = game:GetService("Players")
-    local Camera = workspace.CurrentCamera
+local json = loadstring(game:HttpGet("https://unkown.eu/packages/json.lua", true))()
+local errorlib = loadstring(game:HttpGet("https://unkown.eu/packages/error.lua", true))()
 
-    local OutlineModule = {}
+local JSON_ERRORS = {
+    ["name"] = errorlib.new("Invalid Rip.json data", "Name Missing", 1002),
+    ["description"] = errorlib.new("Invalid Rip.json data", "Description Missing", 1003),
+    ["entry"] = errorlib.new("Invalid Rip.json data", "Entry Missing", 1004)
+}
 
-    local outlines = {}
-    local labels = {}
-
-    local function createScreenGui()
-        local screenGui = Players.LocalPlayer:FindFirstChild("PlayerGui"):FindFirstChild("OutlineUI")
-        if not screenGui then
-            screenGui = Instance.new("ScreenGui")
-            screenGui.Name = "OutlineUI"
-            screenGui.ResetOnSpawn = false
-            screenGui.IgnoreGuiInset = true
-            screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-            screenGui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
-        end
-        return screenGui
+local function ConvertYouarel(youarel)
+    if youarel:sub(-1) == "/" then
+        youarel = youarel:sub(1, -2)
     end
-
-    local function getObjectCorners(obj)
-        local cf, size
-        if obj:IsA("Model") then
-            cf, size = obj:GetBoundingBox()
-        elseif obj:IsA("BasePart") then
-            cf, size = obj.CFrame, obj.Size
-        else
-            return {}
-        end
-
-        local halfSize = size / 2
-        local corners = {}
-
-        for x = -1, 1, 2 do
-            for y = -1, 1, 2 do
-                for z = -1, 1, 2 do
-                    local offset = Vector3.new(x * halfSize.X, y * halfSize.Y, z * halfSize.Z)
-                    table.insert(corners, (cf * CFrame.new(offset)).Position)
-                end
-            end
-        end
-
-        return corners
+    local username, reponame = youarel:match("https://github.com/([^/]+)/([^/]+)")
+    if not username or not reponame then
+        error("Invalid GitHub URL format")
     end
-
-    RunService.RenderStepped:Connect(function()
-        for _, item in ipairs(outlines) do
-            local obj = item.object
-            local frame = item.frame
-
-            if obj and obj.Parent then
-                local minX, minY = math.huge, math.huge
-                local maxX, maxY = -math.huge, -math.huge
-                local onScreen = false
-
-                for _, corner in ipairs(getObjectCorners(obj)) do
-                    local screenPoint, visible = Camera:WorldToViewportPoint(corner)
-                    if visible then
-                        onScreen = true
-                        minX = math.min(minX, screenPoint.X)
-                        minY = math.min(minY, screenPoint.Y)
-                        maxX = math.max(maxX, screenPoint.X)
-                        maxY = math.max(maxY, screenPoint.Y)
-                    end
-                end
-
-                if onScreen then
-                    frame.Visible = true
-                    frame.Position = UDim2.fromOffset(minX, minY)
-                    frame.Size = UDim2.fromOffset(maxX - minX, maxY - minY)
-                else
-                    frame.Visible = false
-                end
-            else
-                frame.Visible = false
-            end
-        end
-
-        for _, labelData in ipairs(labels) do
-            local obj = labelData.object
-            local label = labelData.label
-            local offset = labelData.offset
-
-            if obj and obj.Parent then
-                local worldPos
-                if obj:IsA("Model") then
-                    worldPos = select(1, obj:GetBoundingBox()).Position
-                elseif obj:IsA("BasePart") then
-                    worldPos = obj.Position
-                end
-
-                if worldPos then
-                    local finalPos = worldPos + offset
-                    local screenPos, visible = Camera:WorldToViewportPoint(finalPos)
-
-                    label.Visible = visible
-                    if visible then
-                        label.Position = UDim2.fromOffset(screenPos.X, screenPos.Y)
-                    end
-                end
-            else
-                label.Visible = false
-            end
-        end
-    end)
-
-    function OutlineModule.OutlineObject(obj, uitable)
-        local screenGui = createScreenGui()
-
-        local outline = Instance.new("Frame")
-        outline.Name = "OutlineFrame"
-        outline.BorderSizePixel = 2
-        outline.BackgroundTransparency = 1
-        outline.AnchorPoint = Vector2.new(0, 0)
-        outline.Size = UDim2.new(0, 0, 0, 0)
-        outline.Position = UDim2.new(0, 0, 0, 0)
-        outline.ZIndex = 1
-        outline.Visible = false
-        outline.Parent = screenGui
-
-        for _, v in uitable:GetChildren() do
-            v.Parent = outline
-        end
-
-        table.insert(outlines, {
-            object = obj,
-            frame = outline
-        })
-
-        return function()
-            outline:Destroy()
-            for i, v in ipairs(outlines) do
-                if v.frame == outline then
-                    table.remove(outlines, i)
-                    break
-                end
-            end
-        end
-    end
-
-    function OutlineModule.Clear(obj)
-        for i = #outlines, 1, -1 do
-            if outlines[i].object == obj then
-                outlines[i].frame:Destroy()
-                table.remove(outlines, i)
-            end
-        end
-
-        for i = #labels, 1, -1 do
-            if labels[i].object == obj then
-                labels[i].label:Destroy()
-                table.remove(labels, i)
-            end
-        end
-    end
-
-    function OutlineModule.IsOutlined(obj)
-        for _, outlineData in ipairs(outlines) do
-            if outlineData.object == obj then
-                return true
-            end
-        end
-        for _, labelData in ipairs(labels) do
-            if labelData.object == obj then
-                return true
-            end
-        end
-        return false
-    end
-
-    return OutlineModule
-end)()
-
-
---[[  
-    Now the WorldGui proxy implementation — hooking Instance.new to fake it.
-]]
-
-do
-    local oldInstanceNew = Instance.new
-    local mt = getrawmetatable(game)
-    local setreadonly = setreadonly or function() end
-    local getnamecallmethod = getnamecallmethod or function() return "" end
-
-    setreadonly(mt, false)
-
-    local worldGuiProxies = {}
-
-    local WorldGuiProxy = {}
-    WorldGuiProxy.__index = WorldGuiProxy
-
-    function WorldGuiProxy.new()
-        local self = setmetatable({}, WorldGuiProxy)
-        self._Parent = nil
-        self.uitable = Instance.new("Folder")
-        self.uitable.Name = "WorldGui_Container"
-        return self
-    end
-
-    function WorldGuiProxy:__tostring()
-        return "Instance (WorldGui)"
-    end
-
-    function WorldGuiProxy:Destroy()
-        if self.cleanupFunc then
-            self.cleanupFunc()
-        end
-        self.uitable:Destroy()
-        worldGuiProxies[self] = nil
-    end
-
-    function WorldGuiProxy:__index(key)
-        if key == "Parent" then
-            return self._Parent
-        elseif key == "Name" then
-            return "WorldGui"
-        elseif key == "Destroy" then
-            return function() self:Destroy() end
-        elseif key == "GetChildren" then
-            return function()
-                return self.uitable:GetChildren()
-            end
-        elseif key == "IsA" then
-            return function(_, className)
-                return className == "WorldGui"
-            end
-        else
-            return rawget(WorldGuiProxy, key)
-        end
-    end
-
-    function WorldGuiProxy:__newindex(key, value)
-        if key == "Parent" then
-            self._Parent = value
-            self.uitable.Parent = value
-
-            if self.cleanupFunc then
-                self.cleanupFunc()
-                self.cleanupFunc = nil
-            end
-
-            if value then
-                self.cleanupFunc = OutlineModule.OutlineObject(value, self.uitable)
-            end
-        else
-            rawset(self, key, value)
-        end
-    end
-
-    local oldNamecall = mt.__namecall
-    mt.__namecall = newcclosure(function(self, ...)
-        local method = getnamecallmethod()
-        local args = {...}
-        if (method == "New" or method == "new") and args[1] == "WorldGui" then
-            local proxy = WorldGuiProxy.new()
-            worldGuiProxies[proxy] = true
-            return proxy
-        end
-        return oldNamecall(self, ...)
-    end)
-
-    setreadonly(mt, true)
-
-    local frameMt = getrawmetatable(Instance.new("Frame"))
-    setreadonly(frameMt, false)
-    local oldFrameNewIndex = frameMt.__newindex
-    frameMt.__newindex = newcclosure(function(t, k, v)
-        if k == "Parent" and type(v) == "table" and getmetatable(v) == WorldGuiProxy then
-            rawset(t, "Parent", v.uitable)
-        else
-            oldFrameNewIndex(t, k, v)
-        end
-    end)
-    setreadonly(frameMt, true)
+    local rawBaseUrl = string.format("https://raw.githubusercontent.com/%s/%s/refs/heads/main/", username, reponame)
+    return rawBaseUrl
 end
 
+local function checkJsonUwU(jsonTable, fieldName)
+    if not jsonTable[fieldName] then
+        local err = JSON_ERRORS[fieldName]
+        if err then
+            return errorlib.format(err)
+        end
+    end
+end
+
+local function gitgud(treeUrl)
+    local function httpGet(url)
+        return game:HttpGet(url)
+    end
+
+    local owner, repo, branch = treeUrl:match("github.com/([^/]+)/([^/]+)/tree/(.+)")
+    assert(owner and repo and branch, "Invalid GitHub tree URL")
+
+    local apiUrl = string.format("https://api.github.com/repos/%s/%s/git/trees/%s?recursive=1", owner, repo, branch)
+    local response = httpGet(apiUrl)
+    local data = json.decode(response)
+
+    local fileMap = {}
+    for _, item in ipairs(data.tree) do
+        if item.type == "blob" then
+            local rawUrl = string.format("https://raw.githubusercontent.com/%s/%s/%s/%s", owner, repo, branch, item.path)
+            fileMap[item.path] = { rawUrl }
+        end
+    end
+
+    return fileMap
+end
+
+
+function rip.install(url)
+    local RAW = ConvertYouarel(url)
+    local RIPdotJson = game:HttpGet(RAW.."rip.json")
+    local RIPdotJsonDecoded = json.decode(RIPdotJson)
+
+    for key, _ in pairs(JSON_ERRORS) do
+        local errinfo = checkJsonUwU(RIPdotJsonDecoded, key)
+        if errinfo then
+            error(errinfo)
+        end
+    end
+
+    local name = RIPdotJsonDecoded.name or "unknown-package"
+    print("Collecting " .. name)
+    task.wait(0.05)
+
+    print("  Downloading " .. name .. " (rip)")
+    task.wait(0.05)
+
+    if RIPdotJsonDecoded.dependencies then
+        for _, dep in ipairs(RIPdotJsonDecoded.dependencies) do
+            print("  Collecting " .. dep)
+            task.wait(0.05)
+            print("    Downloading " .. dep .. " (rip)")
+            task.wait(0.05)
+        end
+    end
+
+    local folder = "/rip/Packages/" .. name .. "/"
+
+    if RIPdotJsonDecoded.name and not isfolder(folder) then 
+        makefolder(folder)
+        makefolder(folder .. "src")
+    end
+
+    writefile(folder .. "rip.json", RIPdotJson)
+
+    print("Installing collected files:")
+    local files = gitgud(url)
+    for fname, raw in pairs(files) do
+        local filePath = folder .. tostring(fname)
+        writefile(filePath, game:HttpGet(raw[1]))
+        print("  - " .. fname)
+        task.wait(0.05)
+    end
+
+    print("Successfully installed " .. name)
+end
+
+local function readFile(path)
+    if not isfile(path) then
+        error("File not found: "..path)
+    end
+    return readfile(path)
+end
+
+getgenv()._rip_loaded = getgenv()._rip_loaded or {}
+
+local function pathJoin(base, relative)
+    if relative:sub(1,1) == "/" then
+        relative = relative:sub(2)
+    end
+    if base:sub(-1) ~= "/" then
+        base = base .. "/"
+    end
+    return base .. relative
+end
+
+
+
+local function loadModule(pkgName, filePath)
+    local cache = getgenv()._rip_loaded
+    cache[pkgName] = cache[pkgName] or {}
+
+    if cache[pkgName][filePath] then
+        return cache[pkgName][filePath]
+    end
+
+    local root = "/rip/Packages/" .. pkgName .. "/"
+    local fullPath = pathJoin(root, filePath)
+
+    if not isfile(fullPath) then
+        error("Module file not found: "..fullPath)
+    end
+
+    local code = readFile(fullPath)
+
+    local function packageLoadstring(fileName)
+        local function loadAllModulesInCurrentDir()
+            local dir = filePath:match("(.*/)")
+            dir = dir or ""
+
+            local modules = {}
+            local basePath = "/rip/Packages/" .. pkgName .. "/" .. dir
+
+            local files = listfiles(basePath)
+
+            for _, f in ipairs(files) do
+                local relativePath = f:sub(#basePath + 1)  
+
+                if f:match("%.lua$") and not f:lower():match("init.lua") then
+                    local modName = relativePath:match("([^/]+)%.lua$")
+                    modules[modName] = loadModule(pkgName, dir .. relativePath)
+                end
+            end
+            return modules
+        end
+
+        local newPath
+        if fileName == "*" then
+            return function()
+                return loadAllModulesInCurrentDir()
+            end
+        elseif fileName:sub(1,1) == "/" then
+            newPath = fileName:sub(2)
+        else
+            local dir = filePath:match("(.*/)")
+            dir = dir or ""
+            newPath = dir .. fileName
+        end
+
+        return function()
+            return loadModule(pkgName, newPath)
+        end
+    end
+
+
+
+    local env = setmetatable({
+        loadstring = packageLoadstring,
+    }, { __index = getgenv() })
+
+    local fn, err = loadstring(code, filePath)
+    if not fn then error(err) end
+    setfenv(fn, env)
+
+    local result = fn()
+    cache[pkgName][filePath] = result or true
+    return result
+end
+
+function rip.include(pkgName)
+    if getgenv()._rip_loaded[pkgName] and getgenv()._rip_loaded[pkgName].__entry_loaded then
+        local mod = getgenv()._rip_loaded[pkgName].__entry_loaded
+        getgenv()[pkgName] = mod 
+        return mod
+    end
+
+    local root = "/rip/Packages/" .. pkgName .. "/"
+    local ripJsonPath = root .. "rip.json"
+
+    if not isfile(ripJsonPath) then
+        error("rip.json missing for package: "..pkgName)
+    end
+
+    local ripJsonRaw = readFile(ripJsonPath)
+    local ripJson = json.decode(ripJsonRaw)
+
+    if not ripJson or not ripJson.entry then
+        error("Entry missing in rip.json for package: "..pkgName)
+    end
+
+    local entryModule = loadModule(pkgName, ripJson.entry)
+
+    getgenv()._rip_loaded[pkgName].__entry_loaded = entryModule
+
+    getgenv()[pkgName] = entryModule
+
+    return entryModule
+end
+
+
+function rip.update(pkgName)
+    -- too lazy rn
+end
+
+function rip.ListPackages()
+    local folder = "/rip/Packages/"
+    if isfolder(folder) then
+        print("INSTALLED RIP PACKAGES[")
+        for _, file in listfiles(folder) do
+            print(string.gsub(file,folder,""))
+        end
+        print("]")
+    end
+end
+
+function rip.uninstall(pkgName)
+    local folder = "/rip/Packages/"
+    if isfolder(folder .. pkgName) then
+        local decoded = json.decode(readFile(folder .. pkgName .. "/rip.json"))
+        local version = decoded.version or "unknown"
+        print("Found existing installation: " .. pkgName .. " " .. version)
+        task.wait(.05)
+        print("Uninstalling " .. pkgName .. "-" .. version .. ":")
+        task.wait(.05)
+
+        print("  Removing:")
+        task.wait(.05)
+
+        for _, v in ipairs(decoded.files) do
+            print("    " .. folder .. pkgName.. v)
+             task.wait(.05)
+
+        end
+        task.wait(.05)
+
+        print("Successfully uninstalled " .. pkgName .. "-" .. version)
+        delfolder(folder..pkgName)
+    else
+        print("Package '" .. pkgName .. "' is not installed.")
+    end
+end
+
+
+function rip.show(pkgName)
+    local folder = "/rip/Packages/"
+    if isfolder(folder..pkgName) then
+        local decoded = json.decode(readFile(folder..pkgName.."/rip.json"))
+        print("Name: "..decoded.name)
+        print("Version: "..decoded.version)
+        print("Description: "..decoded.description)
+
+    end
+end
+
+getgenv().install = rip.install
+getgenv().uninstall = rip.uninstall
+
+getgenv().include = rip.include
+
+getgenv().ListPackages = rip.ListPackages
+getgenv().show = rip.show
+
+return rip
